@@ -1,0 +1,18 @@
+{
+  "tickers": [
+    "SPY",
+    "XLK",
+    "XLF",
+    "XLE",
+    "XLV",
+    "XLY",
+    "XLP",
+    "XLI",
+    "XLU",
+    "XLB"
+  ],
+  "start": "2005-01-01",
+  "end_exclusive": "2026-10-23",
+  "downloaded_utc": "2026-10-23T14:01:52+00:00",
+  "source": "yfinance (Yahoo Finance) daily OHLC, auto_adjust=False"
+}
