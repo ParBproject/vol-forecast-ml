@@ -4,6 +4,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 S = json.loads((ROOT / "results" / "summary.json").read_text())
+META = json.loads((ROOT / "data" / "raw" / "meta.json").read_text())
+MANIFEST = json.loads((ROOT / "data" / "MANIFEST.json").read_text())
 P, A, M = S["per_ticker"], S["aggregate"], S["models"]
 T = S["tickers"]
 first = P[T[0]]
@@ -32,7 +34,21 @@ agg_rows = "\n".join(
     f"{A[k].get('sig_better_qlike', '-')} / {A[k].get('sig_worse_qlike', '-')} | {A[k]['mean_mse']:.3f} | {rel(k, 'mse'):+.1f}% | "
     f"{A[k]['wins_mse']} | {A[k].get('sig_better_mse', '-')} / {A[k].get('sig_worse_mse', '-')} |" for k in M)
 L = A["LSTM"]
+PROVENANCE = "\n".join([
+    "## Data provenance",
+    "",
+    f"- **Prices:** {META['source']}, for {len(META['tickers'])} ETFs ({', '.join(META['tickers'])}).",
+    f"  Requested {META['start']} to {META['end_exclusive']} (end exclusive); downloaded {META['downloaded_utc']} (UTC).",
+    f"- **Frozen snapshot:** {len(MANIFEST)} files in `data/raw/` (one CSV per ETF plus `meta.json`), each SHA-256",
+    "  hashed in `data/MANIFEST.json`. `make verify` (part of `make all`) fails if any file has changed.",
+    "- **Refresh:** `make fetch` re-downloads everything, which changes the hashes and every result.",
+    "- **Terms:** the snapshot is committed only so the study reproduces. Check Yahoo's terms before reusing it.",
+    "",
+    "",
+])
 text = f"""# vol-forecast-ml
+
+[![CI](https://github.com/ParBproject/vol-forecast-ml/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ParBproject/vol-forecast-ml/actions/workflows/ci.yml)
 
 One-day-ahead **realized-volatility forecasting** for SPY and the nine SPDR sector ETFs ({", ".join(T[1:])}).
 Two econometric baselines, **HAR-RV** and **GARCH(1,1)**, are compared against **gradient boosting** and a **small LSTM**
@@ -78,7 +94,7 @@ is generated from `results/summary.json` by `scripts/build_readme.py` and pinned
 |---|{"---:|" * (2 * len(M) - 1)}
 {m_rows}
 
-## Method
+{PROVENANCE}## Method
 
 - **Data:** daily OHLC from Yahoo Finance via yfinance, 2005-01-03 to 2026-10-22, frozen in `data/raw` with SHA-256 hashes in
   `data/MANIFEST.json` (`make verify`). `make all` runs fully offline.
