@@ -1,5 +1,7 @@
 # vol-forecast-ml
 
+[![CI](https://github.com/ParBproject/vol-forecast-ml/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ParBproject/vol-forecast-ml/actions/workflows/ci.yml)
+
 One-day-ahead **realized-volatility forecasting** for SPY and the nine SPDR sector ETFs (XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB).
 Two econometric baselines, **HAR-RV** and **GARCH(1,1)**, are compared against **gradient boosting** and a **small LSTM**
 in a strictly walk-forward test, scored with QLIKE and MSE, with Diebold-Mariano tests against HAR. Every number below
@@ -64,6 +66,15 @@ is generated from `results/summary.json` by `scripts/build_readme.py` and pinned
 | XLI | **5.142** | 6.154 | 5.366 | 5.437 | +1.23 | +0.68 | +0.61 |
 | XLU | **1.830** | 2.603 | 1.872 | 2.003 | +1.65 | +0.25 | +0.62 |
 | XLB | **2.725** | 3.915 | 3.228 | 3.554 | +1.33 | +0.91 | +0.95 |
+
+## Data provenance
+
+- **Prices:** yfinance (Yahoo Finance) daily OHLC, auto_adjust=False, for 10 ETFs (SPY, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB).
+  Requested 2005-01-01 to 2026-10-23 (end exclusive); downloaded 2026-10-23T14:01:52+00:00 (UTC).
+- **Frozen snapshot:** 11 files in `data/raw/` (one CSV per ETF plus `meta.json`), each SHA-256
+  hashed in `data/MANIFEST.json`. `make verify` (part of `make all`) fails if any file has changed.
+- **Refresh:** `make fetch` re-downloads everything, which changes the hashes and every result.
+- **Terms:** the snapshot is committed only so the study reproduces. Check Yahoo's terms before reusing it.
 
 ## Method
 
