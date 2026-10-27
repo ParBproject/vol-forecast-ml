@@ -81,7 +81,7 @@ class GBM:
 
 
 class LSTM:
-    """1-layer LSTM (16 hidden), 22-day window of the ML features, target log rv[t+1]. Fixed settings, seed 0, no tuning."""
+    """One LSTM layer, 16 units, on 22-day windows of the same features as GBM. Target is log rv[t+1]. Seed 0."""
     name = "LSTM"
     SEQ, HID, EPOCHS, LR, BATCH = 22, 16, 15, 1e-3, 64
 

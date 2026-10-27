@@ -9,6 +9,25 @@ const yr = (ms) => new Date(ms).getUTCFullYear();
 const fmtDate = (ms) => new Date(ms).toISOString().slice(0, 7);
 const pct = (x, d = 1) => `${x > 0 ? "+" : ""}${(x * 100).toFixed(d)}%`;
 
+function topMseDates(S) {
+  const counts = new Map();
+  let march = 0;
+  for (const t of S.tickers) {
+    const dates = S.per_ticker[t].har_mse_top5_days.dates;
+    if (dates.some((d) => d.startsWith("2020-03"))) march += 1;
+    for (const d of dates) {
+      if (!d.startsWith("2020-03")) counts.set(d, (counts.get(d) || 0) + 1);
+    }
+  }
+  const parts = [];
+  if (march) parts.push({ n: march, label: `March 2020 (${march} of ${S.tickers.length})` });
+  for (const [d, n] of counts) {
+    if (n >= 5) parts.push({ n, label: `${d} (${n} of ${S.tickers.length})` });
+  }
+  parts.sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
+  return parts.map((p) => p.label).join(", ");
+}
+
 export default function App() {
   const [S, setS] = useState(null);
   const [tk, setTk] = useState("SPY");
@@ -38,6 +57,7 @@ export default function App() {
   const A = S.aggregate, P = S.per_ticker, M = S.models;
   const rel = (k, l) => A[k][`mean_${l}`] / A.HAR[`mean_${l}`] - 1;
   const shown = M.filter((m) => on[m]);
+  const mseSig = M.reduce((s, m) => s + (A[m].sig_better_mse || 0) + (A[m].sig_worse_mse || 0), 0);
 
   let vol = null, roll = null, win = null;
   if (d && hi > lo) {
@@ -57,10 +77,12 @@ export default function App() {
     <div className="wrap">
       <header>
         <div className="eyebrow">Walk-forward · {S.tickers.length} ETFs · {first.oos_first} to {first.oos_last}</div>
-        <h1>Can ML beat <span>HAR</span> at forecasting volatility?</h1>
-        <p className="lede">One-day-ahead forecasts of daily realized variance (Garman-Klass, from daily OHLC) for SPY and nine
-          sector ETFs. Each model is refit every year on past data only. On QLIKE the LSTM wins clearly. On MSE no model is
-          significantly different from HAR. Fixed settings throughout, with no tuning.</p>
+        <h1>One-day-ahead volatility forecasts</h1>
+        <p className="lede">Next-day Garman-Klass variance for SPY and nine sector ETFs, using only data through the previous close.
+          Each model is refit once a year. The LSTM has the lowest QLIKE on {A.LSTM.wins_qlike} of {S.tickers.length} ETFs
+          ({A.LSTM.sig_better_qlike} significantly better than HAR at 5%). {mseSig === 0
+            ? "No model's MSE difference versus HAR is significant at 5%."
+            : `${mseSig} MSE comparisons versus HAR are significant at 5%.`}</p>
       </header>
 
       <div className="kpis" style={{ marginBottom: 16 }}>
@@ -147,12 +169,12 @@ export default function App() {
 
         <section className="card span-12">
           <h2>Method</h2>
-          <p className="note">Data: Yahoo Finance daily OHLC, 2005-2026, frozen with SHA-256 hashes. Target: next-day Garman-Klass
-            open-to-close variance, a range-based proxy, not intraday realized variance. Training starts with 2005-2012, the window
-            expands, and every model is refit each January on earlier data only. Tests scramble all future data and check that past
-            forecasts don't change. HAR: OLS in levels. GARCH(1,1): open-to-close returns. Gradient boosting: scikit-learn defaults
-            on log variance. LSTM: 16 units, 22-day window, 15 epochs, seed 0. QLIKE favours log-target models and MSE favours OLS in
-            levels, so both are shown. MSE is dominated by a few crash days (2015-08-24, March 2020).</p>
+          <p className="note">Yahoo daily OHLC from 2005 through {first.oos_last}, stored under data/raw with SHA-256 hashes.
+            The target is next-day Garman-Klass variance from the daily bar (open to close), not intraday realized variance.
+            The first training sample is 2005-2012; each later year is fit only on earlier rows. HAR is OLS in levels.
+            GARCH(1,1) uses open-to-close returns. Gradient boosting is scikit-learn's histogram booster on log variance,
+            with the library defaults. The LSTM has 16 units, a 22-day window, 15 epochs, and seed 0.
+            The largest HAR squared errors fall on {topMseDates(S)}.</p>
         </section>
       </div>
       <footer>Par Bahrae · <a href="https://github.com/ParBproject/vol-forecast-ml">Source and full results on GitHub</a> ·{" "}

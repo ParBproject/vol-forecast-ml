@@ -1,4 +1,4 @@
-"""ONLINE ONLY: download daily OHLC for SPY + 9 SPDR sector ETFs from yfinance. Run once; outputs are frozen."""
+"""Download daily OHLC from Yahoo Finance. Not used by `make all`."""
 import datetime as dt
 import json
 from pathlib import Path
