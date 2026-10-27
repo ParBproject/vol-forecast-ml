@@ -1,4 +1,5 @@
-"""Generate README.md from results/summary.json (no hand-typed numbers)."""
+"""Write README.md from results/summary.json and the frozen raw files."""
+import csv
 import json
 from pathlib import Path
 
@@ -21,39 +22,75 @@ def rel(k, loss):
     return (A[k][f"mean_{loss}"] / A["HAR"][f"mean_{loss}"] - 1) * 100
 
 
+def mse_concentration():
+    shares = [P[t]["har_mse_top5_days"]["share"] for t in T]
+    lo, hi = min(shares), max(shares)
+    march_n = 0
+    counts = {}
+    for t in T:
+        dates = P[t]["har_mse_top5_days"]["dates"]
+        if any(d.startswith("2020-03") for d in dates):
+            march_n += 1
+        for d in dates:
+            if not d.startswith("2020-03"):
+                counts[d] = counts.get(d, 0) + 1
+    bits = []
+    if march_n:
+        bits.append((march_n, f"March 2020 ({march_n} of {len(T)})"))
+    bits.extend((n, f"{d} ({n} of {len(T)})") for d, n in counts.items() if n >= 5)
+    bits.sort(key=lambda x: (-x[0], x[1]))
+    where = ", ".join(text for _, text in bits)
+    sentence = f"The five largest HAR squared errors are {lo:.0%} to {hi:.0%} of each ETF's total MSE"
+    if where:
+        sentence += f", mostly {where}"
+    return sentence + "."
+
+
+def xli_print_sentence(day="2019-02-26"):
+    high = close = None
+    with (ROOT / "data" / "raw" / "XLI.csv").open() as f:
+        for row in csv.DictReader(f):
+            if row["date"] == day:
+                high, close = float(row["High"]), float(row["Close"])
+                break
+    if high is None or close <= 0 or high < close * 1.05:
+        return "The Yahoo bars are used as stored, with no edits."
+    dates = P["XLI"]["har_mse_top5_days"]["dates"]
+    rank = ""
+    if day in dates:
+        rank = f" That day ranks {dates.index(day) + 1} among XLI's five largest HAR squared errors."
+    return (
+        f"The Yahoo bars are used as stored, with no edits. On {day}, XLI's high in `data/raw/XLI.csv` "
+        f"is {high:.2f} and the close is {close:.2f}.{rank} The row is left as downloaded."
+    )
+
+
 q_rows = "\n".join(
-    f"| {t} | " + " | ".join(f"{'**' if P[t]['best_qlike'] == k else ''}{P[t]['models'][k]['qlike']:.4f}"
-                             f"{'**' if P[t]['best_qlike'] == k else ''}" for k in M)
+    f"| {t} | " + " | ".join(
+        f"{'**' if P[t]['best_qlike'] == k else ''}{P[t]['models'][k]['qlike']:.4f}"
+        f"{'**' if P[t]['best_qlike'] == k else ''}" for k in M)
     + " | " + " | ".join(dm(t, k, "qlike") for k in M[1:]) + " |" for t in T)
 m_rows = "\n".join(
-    f"| {t} | " + " | ".join(f"{'**' if P[t]['best_mse'] == k else ''}{P[t]['models'][k]['mse']:.3f}"
-                             f"{'**' if P[t]['best_mse'] == k else ''}" for k in M)
+    f"| {t} | " + " | ".join(
+        f"{'**' if P[t]['best_mse'] == k else ''}{P[t]['models'][k]['mse']:.3f}"
+        f"{'**' if P[t]['best_mse'] == k else ''}" for k in M)
     + " | " + " | ".join(dm(t, k, "mse") for k in M[1:]) + " |" for t in T)
 agg_rows = "\n".join(
     f"| {k} | {A[k]['mean_qlike']:.4f} | {rel(k, 'qlike'):+.1f}% | {A[k]['wins_qlike']} | "
-    f"{A[k].get('sig_better_qlike', '-')} / {A[k].get('sig_worse_qlike', '-')} | {A[k]['mean_mse']:.3f} | {rel(k, 'mse'):+.1f}% | "
-    f"{A[k]['wins_mse']} | {A[k].get('sig_better_mse', '-')} / {A[k].get('sig_worse_mse', '-')} |" for k in M)
+    f"{A[k].get('sig_better_qlike', '-')} / {A[k].get('sig_worse_qlike', '-')} | {A[k]['mean_mse']:.3f} | "
+    f"{rel(k, 'mse'):+.1f}% | {A[k]['wins_mse']} | "
+    f"{A[k].get('sig_better_mse', '-')} / {A[k].get('sig_worse_mse', '-')} |"
+    for k in M)
 L = A["LSTM"]
-PROVENANCE = "\n".join([
-    "## Data provenance",
-    "",
-    f"- **Prices:** {META['source']}, for {len(META['tickers'])} ETFs ({', '.join(META['tickers'])}).",
-    f"  Requested {META['start']} to {META['end_exclusive']} (end exclusive); downloaded {META['downloaded_utc']} (UTC).",
-    f"- **Frozen snapshot:** {len(MANIFEST)} files in `data/raw/` (one CSV per ETF plus `meta.json`), each SHA-256",
-    "  hashed in `data/MANIFEST.json`. `make verify` (part of `make all`) fails if any file has changed.",
-    "- **Refresh:** `make fetch` re-downloads everything, which changes the hashes and every result.",
-    "- **Terms:** the snapshot is committed only so the study reproduces. Check Yahoo's terms before reusing it.",
-    "",
-    "",
-])
+n = len(T)
 text = f"""# vol-forecast-ml
 
 [![CI](https://github.com/ParBproject/vol-forecast-ml/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ParBproject/vol-forecast-ml/actions/workflows/ci.yml)
 
-One-day-ahead **realized-volatility forecasting** for SPY and the nine SPDR sector ETFs ({", ".join(T[1:])}).
-Two econometric baselines, **HAR-RV** and **GARCH(1,1)**, are compared against **gradient boosting** and a **small LSTM**
-in a strictly walk-forward test, scored with QLIKE and MSE, with Diebold-Mariano tests against HAR. Every number below
-is generated from `results/summary.json` by `scripts/build_readme.py` and pinned by tests.
+One-day-ahead realized-volatility forecasts for SPY and the nine SPDR sector ETFs ({", ".join(T[1:])}).
+HAR-RV and GARCH(1,1) are compared with gradient boosting and a small LSTM.
+Evaluation is walk-forward, with QLIKE, MSE, and Diebold-Mariano tests against HAR.
+`scripts/build_readme.py` writes the numbers below from `results/summary.json`.
 
 **Live app: [parbproject.github.io/vol-forecast-ml](https://parbproject.github.io/vol-forecast-ml/)**
 
@@ -61,22 +98,13 @@ is generated from `results/summary.json` by `scripts/build_readme.py` and pinned
 |---|---|
 | ![Overview](docs/img/overview.png) | ![Mobile](docs/img/mobile.png) |
 
-## Headline (honest result)
+## Results
 
-- Out-of-sample: {first['n_oos']:,} trading days per ETF, {first['oos_first']} to {first['oos_last']}, {len(T)} ETFs.
-- **QLIKE:** the LSTM has the lowest loss on {L['wins_qlike']} of {len(T)} ETFs; mean QLIKE {L['mean_qlike']:.4f} vs HAR
-  {A['HAR']['mean_qlike']:.4f} ({rel('LSTM', 'qlike'):+.1f}%). Its Diebold-Mariano improvement over HAR is significant at 5% on
-  {L['sig_better_qlike']} of {len(T)}. Gradient boosting is roughly level with HAR ({rel('GBM', 'qlike'):+.1f}%; significantly better
-  on {A['GBM']['sig_better_qlike']}, worse on {A['GBM']['sig_worse_qlike']}). GARCH is the worst on QLIKE (significantly worse than HAR on
-  {A['GARCH']['sig_worse_qlike']}).
-- **MSE:** HAR has the lowest MSE on {A['HAR']['wins_mse']} of {len(T)} ETFs and gradient boosting on {A['GBM']['wins_mse']}. No model's MSE difference vs HAR
-  is significant on any ETF. Squared error is dominated by a few crash days: the worst 5 days make up
-  {min(P[t]['har_mse_top5_days']['share'] for t in T):.0%} to {max(P[t]['har_mse_top5_days']['share'] for t in T):.0%} of HAR's total MSE per ETF (mostly 2015-08-24 and March 2020).
-  So MSE cannot separate the models.
-- Takeaway: the LSTM's edge is real but only in the *proportional* (QLIKE) sense. On squared error it is no better than
-  HAR, so this is not evidence that it forecasts the large volatility spikes better.
+- Out of sample: {first['n_oos']:,} trading days per ETF, {first['oos_first']} to {first['oos_last']}, {n} ETFs.
+- QLIKE: the LSTM is lowest on {L['wins_qlike']} of {n} ETFs. Mean QLIKE is {L['mean_qlike']:.4f} versus {A['HAR']['mean_qlike']:.4f} for HAR ({rel('LSTM', 'qlike'):+.1f}%). The Diebold-Mariano improvement over HAR is significant at 5% on {L['sig_better_qlike']} of {n}. Gradient boosting's mean QLIKE is {rel('GBM', 'qlike'):+.1f}% versus HAR (significantly better on {A['GBM']['sig_better_qlike']}, worse on {A['GBM']['sig_worse_qlike']}). GARCH's mean QLIKE is {rel('GARCH', 'qlike'):+.1f}% versus HAR and significantly worse on {A['GARCH']['sig_worse_qlike']}.
+- MSE: HAR is lowest on {A['HAR']['wins_mse']} of {n} ETFs, gradient boosting on {A['GBM']['wins_mse']}, and the LSTM on {L['wins_mse']}. No model's MSE difference versus HAR is significant at 5% on any ETF. {mse_concentration()} Squared error does not separate the models. The QLIKE gap does not show that the LSTM forecasts the large variance jumps more closely than HAR.
 
-## Mean loss across the {len(T)} ETFs
+## Mean loss across the {n} ETFs
 
 | Model | QLIKE | vs HAR | QLIKE wins | DM sig. better / worse | MSE | vs HAR | MSE wins | DM sig. better / worse |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -94,33 +122,30 @@ is generated from `results/summary.json` by `scripts/build_readme.py` and pinned
 |---|{"---:|" * (2 * len(M) - 1)}
 {m_rows}
 
-{PROVENANCE}## Method
+## Data
 
-- **Data:** daily OHLC from Yahoo Finance via yfinance, 2005-01-03 to 2026-10-22, frozen in `data/raw` with SHA-256 hashes in
-  `data/MANIFEST.json` (`make verify`). `make all` runs fully offline.
-- **Target:** next-day Garman-Klass variance from the open/high/low/close, in %². This is a range-based proxy computed from daily
-  bars, not intraday 5-minute realized variance (not freely available), and it covers the open-to-close session only.
-- **Walk-forward:** expanding window. 2005-2012 is the first training window. Every model is refit once per calendar year
-  on data dated strictly before that year, and each forecast of day t+1 uses rows up to day t only. Tests assert this with
-  timestamps and by scrambling all data after a cut date and checking earlier forecasts are bit-identical.
-- **HAR-RV:** OLS of rv[t+1] on daily, weekly (5d) and monthly (22d) mean rv, in levels.
-- **GARCH(1,1):** constant mean, normal errors, fit with `arch` on open-to-close % returns (the same session as the target).
-- **Gradient boosting:** scikit-learn `HistGradientBoostingRegressor` with library defaults on log rv. Features: log rv
-  daily/weekly/monthly, open-to-close return, 5-day return sum and absolute overnight gap. Prediction exp(f + s²/2).
-- **LSTM:** PyTorch, 1 layer of 16 units on 22-day windows of the same features, 15 epochs, Adam 1e-3, seed 0, log-rv target.
-- **No tuning:** every setting above was fixed before the first out-of-sample run and has not been changed since. No
-  hyperparameter search.
-- **Losses and tests:** QLIKE = rv/f - log(rv/f) - 1 and MSE on variance. Diebold-Mariano test vs HAR with Newey-West
-  variance ({S['dm_hac_lags']} lags) and two-sided normal p-values. All models are scored on the same dates.
+- Prices: {META['source']}, {len(META['tickers'])} ETFs ({", ".join(META['tickers'])}). Requested {META['start']} to {META['end_exclusive']} (end exclusive). Downloaded {META['downloaded_utc']}.
+- `data/raw/` has {len(MANIFEST)} files (one CSV per ETF and `meta.json`). SHA-256 hashes are in `data/MANIFEST.json`. `make verify` fails if a file has changed.
+- `make fetch` downloads the files again. That changes the hashes and the results.
+- The CSVs are in the repo so this study can be rerun. Yahoo's terms still apply if the files are reused.
+
+## Method
+
+- The target is next-day Garman-Klass variance from open, high, low, and close, in %². It is an open-to-close range proxy, not intraday realized variance.
+- Walk-forward, expanding window. The first training sample is 2005-2012. Each model is refit once per calendar year on rows dated before that year, and the forecast for day t+1 uses rows through day t only. `tests/test_methods.py` checks the timestamps and checks that scrambling later rows leaves earlier forecasts unchanged.
+- HAR-RV: OLS of rv[t+1] on the daily, 5-day, and 22-day mean rv, in levels.
+- GARCH(1,1): constant mean, normal errors, fit with `arch` on open-to-close percent returns.
+- Gradient boosting: scikit-learn `HistGradientBoostingRegressor` with library defaults, on log rv. Features are log rv (daily, weekly, monthly), the open-to-close return, the 5-day return sum, and the absolute overnight gap. The forecast is exp(prediction + half the training residual variance).
+- LSTM: PyTorch, one layer of 16 units, 22-day windows of the same features, 15 epochs, Adam at 1e-3, seed 0, log-rv target.
+- Those settings are constants in `src/volml/models.py`. There is no search over them.
+- Losses are QLIKE = rv/f - log(rv/f) - 1 and MSE on the variance. Diebold-Mariano tests compare each model with HAR using Newey-West variance ({S['dm_hac_lags']} lags) and two-sided normal p-values. All models are scored on the same dates.
 
 ## Caveats
 
-- Log-target models are naturally better suited to QLIKE, and OLS in levels to MSE. Both losses are reported for this reason.
-- Yahoo daily bars are used as delivered, with no cleaning. At least one suspect print is in the sample: XLI's 2019-02-26 high
-  of 82.66 against a 76.30 close. Cleaning it after seeing results would be data snooping, so it stays.
-- 10 tests on 10 correlated ETFs are not 10 independent confirmations. No multiple-testing correction is applied.
-- The LSTM is trained on CPU with a fixed seed. Results are reproducible on the same library versions (torch 2.14 CPU) but
-  can move slightly on other builds.
+- QLIKE fits a log target, and MSE fits OLS in levels. Both losses are reported.
+- {xli_print_sentence()}
+- The {n} ETFs move together, so {n} tests are not {n} separate studies. There is no multiple-testing correction.
+- LSTM training uses a fixed seed. Another PyTorch build can move the forecasts slightly.
 
 ## Reproduce
 

@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/ParBproject/vol-forecast-ml/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ParBproject/vol-forecast-ml/actions/workflows/ci.yml)
 
-One-day-ahead **realized-volatility forecasting** for SPY and the nine SPDR sector ETFs (XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB).
-Two econometric baselines, **HAR-RV** and **GARCH(1,1)**, are compared against **gradient boosting** and a **small LSTM**
-in a strictly walk-forward test, scored with QLIKE and MSE, with Diebold-Mariano tests against HAR. Every number below
-is generated from `results/summary.json` by `scripts/build_readme.py` and pinned by tests.
+One-day-ahead realized-volatility forecasts for SPY and the nine SPDR sector ETFs (XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB).
+HAR-RV and GARCH(1,1) are compared with gradient boosting and a small LSTM.
+Evaluation is walk-forward, with QLIKE, MSE, and Diebold-Mariano tests against HAR.
+`scripts/build_readme.py` writes the numbers below from `results/summary.json`.
 
 **Live app: [parbproject.github.io/vol-forecast-ml](https://parbproject.github.io/vol-forecast-ml/)**
 
@@ -13,20 +13,11 @@ is generated from `results/summary.json` by `scripts/build_readme.py` and pinned
 |---|---|
 | ![Overview](docs/img/overview.png) | ![Mobile](docs/img/mobile.png) |
 
-## Headline (honest result)
+## Results
 
-- Out-of-sample: 3,473 trading days per ETF, 2013-01-02 to 2026-10-22, 10 ETFs.
-- **QLIKE:** the LSTM has the lowest loss on 10 of 10 ETFs; mean QLIKE 0.2968 vs HAR
-  0.3262 (-9.0%). Its Diebold-Mariano improvement over HAR is significant at 5% on
-  8 of 10. Gradient boosting is roughly level with HAR (-0.3%; significantly better
-  on 2, worse on 2). GARCH is the worst on QLIKE (significantly worse than HAR on
-  7).
-- **MSE:** HAR has the lowest MSE on 5 of 10 ETFs and gradient boosting on 4. No model's MSE difference vs HAR
-  is significant on any ETF. Squared error is dominated by a few crash days: the worst 5 days make up
-  40% to 94% of HAR's total MSE per ETF (mostly 2015-08-24 and March 2020).
-  So MSE cannot separate the models.
-- Takeaway: the LSTM's edge is real but only in the *proportional* (QLIKE) sense. On squared error it is no better than
-  HAR, so this is not evidence that it forecasts the large volatility spikes better.
+- Out of sample: 3,473 trading days per ETF, 2013-01-02 to 2026-10-22, 10 ETFs.
+- QLIKE: the LSTM is lowest on 10 of 10 ETFs. Mean QLIKE is 0.2968 versus 0.3262 for HAR (-9.0%). The Diebold-Mariano improvement over HAR is significant at 5% on 8 of 10. Gradient boosting's mean QLIKE is -0.3% versus HAR (significantly better on 2, worse on 2). GARCH's mean QLIKE is +6.5% versus HAR and significantly worse on 7.
+- MSE: HAR is lowest on 5 of 10 ETFs, gradient boosting on 4, and the LSTM on 1. No model's MSE difference versus HAR is significant at 5% on any ETF. The five largest HAR squared errors are 40% to 94% of each ETF's total MSE, mostly March 2020 (10 of 10), 2015-08-24 (8 of 10), 2025-04-07 (5 of 10). Squared error does not separate the models. The QLIKE gap does not show that the LSTM forecasts the large variance jumps more closely than HAR.
 
 ## Mean loss across the 10 ETFs
 
@@ -67,42 +58,30 @@ is generated from `results/summary.json` by `scripts/build_readme.py` and pinned
 | XLU | **1.830** | 2.603 | 1.872 | 2.003 | +1.65 | +0.25 | +0.62 |
 | XLB | **2.725** | 3.915 | 3.228 | 3.554 | +1.33 | +0.91 | +0.95 |
 
-## Data provenance
+## Data
 
-- **Prices:** yfinance (Yahoo Finance) daily OHLC, auto_adjust=False, for 10 ETFs (SPY, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB).
-  Requested 2005-01-01 to 2026-10-23 (end exclusive); downloaded 2026-10-23T14:01:52+00:00 (UTC).
-- **Frozen snapshot:** 11 files in `data/raw/` (one CSV per ETF plus `meta.json`), each SHA-256
-  hashed in `data/MANIFEST.json`. `make verify` (part of `make all`) fails if any file has changed.
-- **Refresh:** `make fetch` re-downloads everything, which changes the hashes and every result.
-- **Terms:** the snapshot is committed only so the study reproduces. Check Yahoo's terms before reusing it.
+- Prices: yfinance (Yahoo Finance) daily OHLC, auto_adjust=False, 10 ETFs (SPY, XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB). Requested 2005-01-01 to 2026-10-23 (end exclusive). Downloaded 2026-10-23T14:01:52+00:00.
+- `data/raw/` has 11 files (one CSV per ETF and `meta.json`). SHA-256 hashes are in `data/MANIFEST.json`. `make verify` fails if a file has changed.
+- `make fetch` downloads the files again. That changes the hashes and the results.
+- The CSVs are in the repo so this study can be rerun. Yahoo's terms still apply if the files are reused.
 
 ## Method
 
-- **Data:** daily OHLC from Yahoo Finance via yfinance, 2005-01-03 to 2026-10-22, frozen in `data/raw` with SHA-256 hashes in
-  `data/MANIFEST.json` (`make verify`). `make all` runs fully offline.
-- **Target:** next-day Garman-Klass variance from the open/high/low/close, in %². This is a range-based proxy computed from daily
-  bars, not intraday 5-minute realized variance (not freely available), and it covers the open-to-close session only.
-- **Walk-forward:** expanding window. 2005-2012 is the first training window. Every model is refit once per calendar year
-  on data dated strictly before that year, and each forecast of day t+1 uses rows up to day t only. Tests assert this with
-  timestamps and by scrambling all data after a cut date and checking earlier forecasts are bit-identical.
-- **HAR-RV:** OLS of rv[t+1] on daily, weekly (5d) and monthly (22d) mean rv, in levels.
-- **GARCH(1,1):** constant mean, normal errors, fit with `arch` on open-to-close % returns (the same session as the target).
-- **Gradient boosting:** scikit-learn `HistGradientBoostingRegressor` with library defaults on log rv. Features: log rv
-  daily/weekly/monthly, open-to-close return, 5-day return sum and absolute overnight gap. Prediction exp(f + s²/2).
-- **LSTM:** PyTorch, 1 layer of 16 units on 22-day windows of the same features, 15 epochs, Adam 1e-3, seed 0, log-rv target.
-- **No tuning:** every setting above was fixed before the first out-of-sample run and has not been changed since. No
-  hyperparameter search.
-- **Losses and tests:** QLIKE = rv/f - log(rv/f) - 1 and MSE on variance. Diebold-Mariano test vs HAR with Newey-West
-  variance (5 lags) and two-sided normal p-values. All models are scored on the same dates.
+- The target is next-day Garman-Klass variance from open, high, low, and close, in %². It is an open-to-close range proxy, not intraday realized variance.
+- Walk-forward, expanding window. The first training sample is 2005-2012. Each model is refit once per calendar year on rows dated before that year, and the forecast for day t+1 uses rows through day t only. `tests/test_methods.py` checks the timestamps and checks that scrambling later rows leaves earlier forecasts unchanged.
+- HAR-RV: OLS of rv[t+1] on the daily, 5-day, and 22-day mean rv, in levels.
+- GARCH(1,1): constant mean, normal errors, fit with `arch` on open-to-close percent returns.
+- Gradient boosting: scikit-learn `HistGradientBoostingRegressor` with library defaults, on log rv. Features are log rv (daily, weekly, monthly), the open-to-close return, the 5-day return sum, and the absolute overnight gap. The forecast is exp(prediction + half the training residual variance).
+- LSTM: PyTorch, one layer of 16 units, 22-day windows of the same features, 15 epochs, Adam at 1e-3, seed 0, log-rv target.
+- Those settings are constants in `src/volml/models.py`. There is no search over them.
+- Losses are QLIKE = rv/f - log(rv/f) - 1 and MSE on the variance. Diebold-Mariano tests compare each model with HAR using Newey-West variance (5 lags) and two-sided normal p-values. All models are scored on the same dates.
 
 ## Caveats
 
-- Log-target models are naturally better suited to QLIKE, and OLS in levels to MSE. Both losses are reported for this reason.
-- Yahoo daily bars are used as delivered, with no cleaning. At least one suspect print is in the sample: XLI's 2019-02-26 high
-  of 82.66 against a 76.30 close. Cleaning it after seeing results would be data snooping, so it stays.
-- 10 tests on 10 correlated ETFs are not 10 independent confirmations. No multiple-testing correction is applied.
-- The LSTM is trained on CPU with a fixed seed. Results are reproducible on the same library versions (torch 2.14 CPU) but
-  can move slightly on other builds.
+- QLIKE fits a log target, and MSE fits OLS in levels. Both losses are reported.
+- The Yahoo bars are used as stored, with no edits. On 2019-02-26, XLI's high in `data/raw/XLI.csv` is 82.66 and the close is 76.30. That day ranks 2 among XLI's five largest HAR squared errors. The row is left as downloaded.
+- The 10 ETFs move together, so 10 tests are not 10 separate studies. There is no multiple-testing correction.
+- LSTM training uses a fixed seed. Another PyTorch build can move the forecasts slightly.
 
 ## Reproduce
 
