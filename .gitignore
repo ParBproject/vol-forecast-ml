@@ -5,10 +5,3 @@ __pycache__/
 .ruff_cache/
 web/node_modules/
 web/dist/
-
-# Local agent tooling, not part of the project
-.cursor/
-.cursorrules
-AGENTS.md
-CLAUDE.md
-.claude/
